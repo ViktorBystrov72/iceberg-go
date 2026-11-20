@@ -26,8 +26,17 @@ import (
 
 	"github.com/apache/iceberg-go"
 	"github.com/apache/iceberg-go/catalog"
+	iceio "github.com/apache/iceberg-go/io"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+// Load remains usable as a function value and through a caller-defined interface.
+var (
+	_ func(context.Context, string, iceberg.Properties) (catalog.Catalog, error) = catalog.Load
+	_ interface {
+		Load(context.Context, string, iceberg.Properties) (catalog.Catalog, error)
+	} = (*catalog.Registry)(nil)
 )
 
 func stubRegistrar() catalog.Registrar {
@@ -97,6 +106,17 @@ func TestCatalogRegistryZeroValue(t *testing.T) {
 
 	reg.Unregister("MOCK")
 	assert.Empty(t, reg.Names())
+}
+
+func TestRegistryLoadWithUnsupportedIORegistry(t *testing.T) {
+	var reg catalog.Registry
+	require.NoError(t, reg.Register("custom", stubRegistrar()))
+	props := iceberg.Properties{"type": "custom"}
+
+	_, err := reg.LoadWithOptions(t.Context(), "test", props, catalog.WithIORegistry(nil))
+	require.NoError(t, err)
+	_, err = reg.LoadWithOptions(t.Context(), "test", props, catalog.WithIORegistry(&iceio.Registry{}))
+	require.ErrorIs(t, err, iceberg.ErrNotImplemented)
 }
 
 func TestCatalogRegistryCloneIsIndependent(t *testing.T) {
